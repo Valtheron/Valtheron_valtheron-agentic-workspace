@@ -13,6 +13,7 @@ const navItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
   { label: 'Monitoring', path: '/monitoring', icon: Activity },
   { label: 'Agents', path: '/agents', icon: Bot },
+  { label: 'Console', path: '/console', icon: Zap },
   // Workflow
   { label: 'Templates', path: '/templates', icon: Library },
   { label: 'Collaboration', path: '/collaboration', icon: Users },
