@@ -1,17 +1,30 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Power, AlertTriangle, X, CheckCircle } from 'lucide-react';
+import { activateKillSwitch, resetKillSwitch, getToken } from '@/lib/api';
 
 export default function KillSwitchFAB() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [activated, setActivated] = useState(false);
+  const [resultMsg, setResultMsg] = useState('All agent processes have been terminated.');
 
-  const handleActivate = () => {
+  // Mit Backend + Login: echter Kill-Switch (beendet laufende Tasks serverseitig
+  // und sperrt neue). Ohne Backend bleibt es beim Demo-Verhalten.
+  const handleActivate = async () => {
+    if (getToken()) {
+      const result = await activateKillSwitch();
+      if (result.ok) {
+        setResultMsg(`${result.terminated} laufende Prozesse beendet. System 15s gesperrt, dann automatischer Reset.`);
+        setTimeout(() => resetKillSwitch(), 15000);
+      } else {
+        setResultMsg(`Backend: ${result.error ?? 'Fehler'}`);
+      }
+    }
     setActivated(true);
     setTimeout(() => {
       setActivated(false);
       setShowConfirm(false);
-    }, 3000);
+    }, 4000);
   };
 
   return (
@@ -41,6 +54,7 @@ export default function KillSwitchFAB() {
           delay: 1.3,
         }}
         title="Emergency Kill Switch"
+        data-testid="killswitch-fab"
       >
         <Power size={22} color="white" />
       </motion.button>
@@ -82,7 +96,7 @@ export default function KillSwitchFAB() {
                     Kill Switch Activated
                   </h3>
                   <p className="mt-2" style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                    All agent processes have been terminated.
+                    {resultMsg}
                   </p>
                 </div>
               ) : (
@@ -117,6 +131,7 @@ export default function KillSwitchFAB() {
                   <div className="flex gap-3 mt-6">
                     <button
                       onClick={() => setShowConfirm(false)}
+                      data-testid="killswitch-cancel"
                       className="flex-1 px-4 py-2.5 rounded-lg border transition-all"
                       style={{
                         borderColor: 'rgba(255,255,255,0.06)',
@@ -129,6 +144,7 @@ export default function KillSwitchFAB() {
                     </button>
                     <button
                       onClick={handleActivate}
+                      data-testid="killswitch-confirm"
                       className="flex-1 px-4 py-2.5 rounded-lg transition-all"
                       style={{
                         backgroundColor: 'var(--accent-danger)',

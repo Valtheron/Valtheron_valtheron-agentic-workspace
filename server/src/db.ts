@@ -45,4 +45,47 @@ db.exec(`
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     finished_at   TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    email         TEXT NOT NULL UNIQUE,
+    display_name  TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'admin',
+    password_hash TEXT NOT NULL,
+    mfa_secret    TEXT,
+    mfa_enabled   INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_email TEXT,
+    action     TEXT NOT NULL,
+    detail     TEXT,
+    ip         TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS workflows (
+    id          TEXT PRIMARY KEY,
+    type        TEXT NOT NULL,
+    task        TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'running',
+    created_by  TEXT,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    finished_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS workflow_steps (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    workflow_id   TEXT NOT NULL REFERENCES workflows(id),
+    step_index    INTEGER NOT NULL,
+    step_role     TEXT NOT NULL,
+    agent_id      TEXT NOT NULL REFERENCES agents(id),
+    prompt        TEXT NOT NULL,
+    result        TEXT,
+    status        TEXT NOT NULL DEFAULT 'running',
+    input_tokens  INTEGER,
+    output_tokens INTEGER
+  );
 `);
