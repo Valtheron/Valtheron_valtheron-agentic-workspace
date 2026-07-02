@@ -13,6 +13,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 const Home          = lazy(() => import(/* webpackChunkName: "valtheron-home" */          './pages/Home'));
 const Monitoring    = lazy(() => import(/* webpackChunkName: "valtheron-monitoring" */    './pages/Monitoring'));
 const Agents        = lazy(() => import(/* webpackChunkName: "valtheron-agents" */        './pages/Agents'));
+const Console       = lazy(() => import(/* webpackChunkName: "valtheron-console" */       './pages/Console'));
 // ─── Workflow Pages ───
 const Templates     = lazy(() => import(/* webpackChunkName: "valtheron-templates" */     './pages/Templates'));
 const Collaboration = lazy(() => import(/* webpackChunkName: "valtheron-collaboration" */ './pages/Collaboration'));
@@ -47,6 +48,7 @@ export default function App() {
         <Route index            element={<LazyPage><Home /></LazyPage>} />
         <Route path="monitoring"   element={<LazyPage><Monitoring /></LazyPage>} />
         <Route path="agents"       element={<LazyPage><Agents /></LazyPage>} />
+        <Route path="console"      element={<LazyPage><Console /></LazyPage>} />
         {/* Workflow */}
         <Route path="templates"    element={<LazyPage><Templates /></LazyPage>} />
         <Route path="collaboration"element={<LazyPage><Collaboration /></LazyPage>} />
