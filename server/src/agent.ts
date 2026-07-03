@@ -38,9 +38,6 @@ export interface RunCallbacks {
 }
 
 export function runAgent(agent: AgentRow, prompt: string, cb: RunCallbacks): { abort: () => void } {
-  // Dev-only: MOCK_LLM=1 streamt eine kanonische Antwort ohne API-Aufruf —
-  // für Tests von Orchestrierung, Kill-Switch und UI ohne API-Key/Kosten.
-  if (process.env.MOCK_LLM === '1') return runMockAgent(agent, prompt, cb);
   const model = modelFor(agent);
   const stream = client.messages.stream({
     model,
@@ -70,33 +67,4 @@ export function runAgent(agent: AgentRow, prompt: string, cb: RunCallbacks): { a
     .catch((err: Error) => cb.onError(err));
 
   return { abort: () => stream.abort() };
-}
-
-function runMockAgent(agent: AgentRow, prompt: string, cb: RunCallbacks): { abort: () => void } {
-  const words = `[MOCK] ${agent.display_name} (${agent.role}) bearbeitet: "${prompt.slice(0, 80)}" — Analyse abgeschlossen, Empfehlung: schrittweise vorgehen und Ergebnisse validieren.`.split(' ');
-  let i = 0;
-  let aborted = false;
-  const timer = setInterval(() => {
-    if (aborted) return;
-    if (i < words.length) {
-      cb.onText(words[i] + ' ');
-      i += 1;
-    } else {
-      clearInterval(timer);
-      cb.onDone({
-        text: words.join(' ') + ' ',
-        model: 'mock-model',
-        inputTokens: 10 + prompt.length,
-        outputTokens: words.length,
-        stopReason: 'end_turn',
-      });
-    }
-  }, 120);
-  return {
-    abort: () => {
-      aborted = true;
-      clearInterval(timer);
-      cb.onError(new Error('Request was aborted.'));
-    },
-  };
 }

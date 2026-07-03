@@ -31,7 +31,7 @@ python3 -m http.server 8080   # → http://localhost:8080/#/
 | Verzeichnis | Inhalt |
 |---|---|
 | [`dashboard/`](dashboard/) | **Quellcode** des Dashboards — React 19, TypeScript, Vite 7, Tailwind, shadcn/ui, 14 Views inkl. Agent Console |
-| [`server/`](server/) | **Backend** — Express 5, SQLite (291 Agenten), Anthropic API: Login (JWT+MFA), Audit-Trail, echter Kill-Switch, Einzel-Tasks und Multi-Agent-Workflows (SSE-Streaming) |
+| [`server/`](server/) | **Backend** — Express 5, SQLite (291 Agenten), Anthropic API: Agenten führen echte Tasks aus (SSE-Streaming) |
 | [`dashboard-demo/`](dashboard-demo/) | Fertig gebaute Offline-Demo (statisch, ohne Build-Tools lauffähig) |
 | [`guides/`](guides/) | Das „Kochbuch": Handbuch v2.0 (PDF), Master-Anleitung, Konzept, Personas-Analyse, User/Admin/Developer Guides |
 | [`architecture/`](architecture/) | Agent-Orchestrator und Security-Modell (Kill-Switch, Audit-Trail) |
@@ -43,11 +43,9 @@ python3 -m http.server 8080   # → http://localhost:8080/#/
 ## Das Dashboard
 
 14 Views: Dashboard Overview, Monitoring, Agents (Katalog mit 291 Agenten),
-**Console** (Login, echte Einzel-Agenten-Tasks und Multi-Agent-Workflows —
-sequential / hierarchical / debate — live gestreamt), Templates, Collaboration,
-Customization, Guides, Operations, Security, API, Database, Orchestrator,
-Deployment. Der **Kill-Switch** (rot, unten rechts) beendet nach Anmeldung
-alle laufenden Prozesse serverseitig.
+**Console** (echte Agenten-Tasks über das Backend, live gestreamt), Templates,
+Collaboration, Customization, Guides, Operations, Security, API, Database,
+Orchestrator, Deployment.
 
 Die Mock-Daten stammen aus dem [Valtheron Handbuch v2.0](guides/Valtheron_Handbuch_v2.pdf):
 16 Agenten-Kategorien, 8 Archetypen, 12 Persönlichkeitsparameter, 6 Zertifizierungs-Level,
