@@ -75,7 +75,7 @@ export async function runTask(
 ): Promise<void> {
   const res = await fetch(`${API_URL}/api/tasks`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ agentId, prompt }),
     signal,
   });
@@ -94,6 +94,155 @@ export async function runTask(
       case 'delta': cb.onDelta((JSON.parse(data) as { text: string }).text); break;
       case 'done': cb.onDone?.(JSON.parse(data) as TaskDoneEvent); break;
       case 'error': cb.onError?.((JSON.parse(data) as { message: string }).message); break;
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buffer.indexOf('\n\n')) >= 0) {
+      const frame = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      let event = 'message';
+      const dataLines: string[] = [];
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event: ')) event = line.slice(7).trim();
+        else if (line.startsWith('data: ')) dataLines.push(line.slice(6));
+      }
+      if (dataLines.length) handle(event, dataLines.join('\n'));
+    }
+  }
+}
+
+/* ── Auth ── */
+
+const TOKEN_KEY = 'valtheron_token';
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function logout(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+export function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export interface LoginResult {
+  ok: boolean;
+  error?: string;
+  mfaRequired?: boolean;
+  user?: { email: string; displayName: string; role: string; mfaEnabled: boolean };
+}
+
+export async function apiLogin(email: string, password: string, totp?: string): Promise<LoginResult> {
+  try {
+    const res = await fetch(`${API_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, totp }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { ok: false, error: data.error, mfaRequired: !!data.mfa_required };
+    localStorage.setItem(TOKEN_KEY, data.token);
+    return { ok: true, user: data.user };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function fetchMe(): Promise<{ email: string; role: string } | null> {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${API_URL}/api/auth/me`, {
+      headers: authHeaders(),
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) { logout(); return null; }
+    const data = await res.json();
+    return data.user;
+  } catch {
+    return null;
+  }
+}
+
+/* ── Kill-Switch ── */
+
+export async function activateKillSwitch(totp?: string): Promise<{ ok: boolean; terminated?: number; error?: string }> {
+  const res = await fetch(`${API_URL}/api/kill-switch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ totp }),
+  });
+  const data = await res.json();
+  return res.ok ? { ok: true, terminated: data.terminated } : { ok: false, error: data.error };
+}
+
+export async function resetKillSwitch(): Promise<boolean> {
+  const res = await fetch(`${API_URL}/api/kill-switch/reset`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  return res.ok;
+}
+
+export async function killSwitchStatus(): Promise<{ active: boolean }> {
+  try {
+    const res = await fetch(`${API_URL}/api/kill-switch`, { signal: AbortSignal.timeout(2500) });
+    return await res.json();
+  } catch {
+    return { active: false };
+  }
+}
+
+/* ── Workflows ── */
+
+export type WorkflowType = 'sequential' | 'hierarchical' | 'debate';
+
+export interface WorkflowCallbacks {
+  onWorkflowStart?: (e: { workflow_id: string; type: string; agents: string[] }) => void;
+  onStepStart?: (e: { index: number; role: string; agent_id: string; agent: string }) => void;
+  onDelta: (e: { index: number; text: string }) => void;
+  onStepDone?: (e: { index: number; role: string; agent: string; input_tokens: number; output_tokens: number }) => void;
+  onWorkflowDone?: (e: { workflow_id: string; status: string; steps?: number; error?: string }) => void;
+}
+
+export async function runWorkflow(
+  type: WorkflowType,
+  task: string,
+  agentIds: string[],
+  cb: WorkflowCallbacks,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/workflows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ type, task, agentIds }),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Backend-Fehler (HTTP ${res.status}) ${detail}`.trim());
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  const handle = (event: string, data: string) => {
+    const parsed = JSON.parse(data);
+    switch (event) {
+      case 'workflow_start': cb.onWorkflowStart?.(parsed); break;
+      case 'step_start': cb.onStepStart?.(parsed); break;
+      case 'delta': cb.onDelta(parsed); break;
+      case 'step_done': cb.onStepDone?.(parsed); break;
+      case 'workflow_done': cb.onWorkflowDone?.(parsed); break;
     }
   };
 
