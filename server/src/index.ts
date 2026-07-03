@@ -7,6 +7,9 @@ if (process.env.HTTPS_PROXY || process.env.https_proxy) {
 import express from 'express';
 import cors from 'cors';
 import crypto from 'node:crypto';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { db } from './db.js';
 import { modelFor, type AgentRow } from './agent.js';
 import {
@@ -244,6 +247,26 @@ app.post('/api/workflows', requireAuth, (req: AuthedRequest, res) => {
   runWorkflow(type, task, agents as AgentRow[], req.user!.email, send, () => clientGone)
     .finally(() => res.end());
 });
+
+/* ── Statisches Frontend ausliefern (Single-Origin-Deployment) ──
+   Wenn das gebaute Dashboard vorliegt (dashboard/dist), liefert der Server
+   es unter "/" mit aus — Frontend und API teilen sich dann eine Domain,
+   keine CORS-/URL-Konfiguration nötig. Fehlt der Build, läuft der Server
+   als reine API weiter (lokale Dev-Umgebung mit getrenntem Vite). */
+const here = path.dirname(fileURLToPath(import.meta.url));
+const staticDir = process.env.STATIC_DIR ?? path.resolve(here, '../../dashboard/dist');
+if (fs.existsSync(path.join(staticDir, 'index.html'))) {
+  app.use(express.static(staticDir));
+  // SPA-Fallback: alles außer /api liefert index.html (Client-Routing).
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+      res.sendFile(path.join(staticDir, 'index.html'));
+    } else {
+      next();
+    }
+  });
+  console.log(`[web] Frontend wird ausgeliefert aus ${staticDir}`);
+}
 
 const port = Number(process.env.PORT ?? 3001);
 app.listen(port, () => {

@@ -1,0 +1,19 @@
+# Ein-Container-Deployment: Frontend + Backend + SQLite hinter einer Domain.
+# Start:  docker compose up -d --build
+# Braucht eine .env neben dieser Datei (siehe .env.example).
+services:
+  valtheron:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      # - ANTHROPIC_MODEL=claude-opus-4-8   # optional
+    volumes:
+      - valtheron-data:/data                # SQLite überlebt Neustarts
+
+volumes:
+  valtheron-data:

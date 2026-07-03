@@ -3,8 +3,12 @@
 // so bleibt die statische Demo (GitHub Pages) voll funktionsfähig.
 import { agentsData, type Agent } from './mockData';
 
+// Prod-Build (vom Backend selbst ausgeliefert): Same-Origin, relative /api-Pfade.
+// Dev: getrennter Vite-Server → Backend auf :3001. Override via VITE_API_URL.
+// Auf GitHub Pages (kein Backend) schlägt der relative Fetch fehl → Mock-Fallback.
 export const API_URL: string =
-  (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001';
+  (import.meta.env.VITE_API_URL as string | undefined) ??
+  (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
 export interface TaskStartEvent { task_id: string; agent: string; model: string }
 export interface TaskDoneEvent {
