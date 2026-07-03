@@ -18,6 +18,9 @@ RUN npm ci
 COPY server/ ./
 # Gebautes Frontend an den Ort kopieren, den der Server erwartet.
 COPY --from=frontend /app/dashboard/dist /app/dashboard/dist
+# Das Seed-Skript liest die Agenten-Daten aus der Frontend-Quelle
+# (Single Source of Truth) — diese eine Datei mit ins Image legen.
+COPY dashboard/src/lib /app/dashboard/src/lib
 
 # SQLite-Daten auf ein Volume legen, damit sie Neustarts überleben.
 ENV DATA_DIR=/data

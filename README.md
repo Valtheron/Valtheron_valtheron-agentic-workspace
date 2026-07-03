@@ -53,12 +53,18 @@ Die Mock-Daten stammen aus dem [Valtheron Handbuch v2.0](guides/Valtheron_Handbu
 16 Agenten-Kategorien, 8 Archetypen, 12 Persönlichkeitsparameter, 6 Zertifizierungs-Level,
 3 Workflow-Typen und 5 Collaboration-Patterns.
 
-## Deployment des Dashboards
+## Deployment
 
-Der Workflow [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)
-baut `dashboard/` bei jedem Push auf den Default-Branch und veröffentlicht das
-Ergebnis auf GitHub Pages. Manuell auslösbar über den „Actions"-Tab
-(*Deploy dashboard to GitHub Pages → Run workflow*).
+**Echtes System (Frontend + Backend + Agenten) auf eigener Domain:** ein
+einziger Docker-Container liefert alles aus. Blueprint und Anleitung für
+Render + `valtheron.online` liegen in [`deploy/RENDER.md`](deploy/RENDER.md);
+Alternativen (eigener VPS mit Docker Compose) in
+[`deploy/README.md`](deploy/README.md). Kein Kubernetes nötig.
+
+**Nur-Dashboard-Vorschau (Mock, kein Backend):** der Workflow
+[`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)
+baut `dashboard/` bei jedem Push auf den Default-Branch und veröffentlicht es
+auf GitHub Pages — praktisch als schnelle Vorschau ohne Server.
 
 ---
 

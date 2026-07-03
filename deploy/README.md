@@ -68,15 +68,12 @@ wenn du keinen Server verwalten willst.
 | **Railway** | sehr einfaches Setup, nutzungsbasiert | ✅ |
 | **Fly.io** | global, günstig, braucht CLI | ✅ |
 
-Allgemeiner Ablauf (am Beispiel Render):
-
-1. Konto anlegen, „New → Web Service", dieses GitHub-Repo verbinden.
-2. Environment: **Docker** (der `Dockerfile` im Repo-Root wird genutzt).
-3. Umgebungsvariablen setzen (`ANTHROPIC_API_KEY`, `JWT_SECRET`, `ADMIN_PASSWORD`).
-4. Ein **persistentes Volume** auf `/data` anlegen, damit die Datenbank Neustarts
-   überlebt.
-5. Unter „Custom Domain" die gewünschte Domain hinterlegen und den angezeigten
-   `CNAME`/`A`-Record beim Domain-Anbieter eintragen. HTTPS kommt automatisch.
+**➡️ Fertige Schritt-für-Schritt-Anleitung für Render + `valtheron.online`:
+[`RENDER.md`](RENDER.md).** Das Repo enthält bereits ein
+[`render.yaml`](../render.yaml)-Blueprint — Render richtet den Service damit
+fast per Klick ein (Region Frankfurt, Docker, Health-Check, Datenträger für
+die DB). Secrets trägst du in Renders verschlüsselte Environment-Maske ein,
+Custom Domain + HTTPS laufen über die Weboberfläche.
 
 ---
 
