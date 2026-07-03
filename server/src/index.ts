@@ -11,16 +11,42 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { db } from './db.js';
-import { runAgent, modelFor, type AgentRow } from './agent.js';
+import { modelFor, type AgentRow } from './agent.js';
+import {
+  ensureAdminUser, login, requireAuth, logAudit, mfaEnroll, mfaVerify,
+  verifySensitiveOp, type AuthedRequest,
+} from './auth.js';
+import {
+  running, runAgentStep, runWorkflow, getKillSwitch, activateKillSwitch,
+  resetKillSwitch, type WorkflowType,
+} from './orchestrator.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+ensureAdminUser();
 
 const startedAt = Date.now();
 
+const sseHead = (res: express.Response) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  return (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+};
+
+/* ── Öffentlich: Health + Lesezugriffe ── */
+
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', uptime_seconds: Math.round((Date.now() - startedAt) / 1000) });
+  res.json({
+    status: 'ok',
+    uptime_seconds: Math.round((Date.now() - startedAt) / 1000),
+    kill_switch: getKillSwitch().active,
+    running_tasks: running.size,
+  });
 });
 
 app.get('/api/agents', (_req, res) => {
@@ -45,8 +71,80 @@ app.get('/api/metrics', (_req, res) => {
            COALESCE(SUM(output_tokens), 0) AS output_tokens
     FROM tasks
   `).get();
-  res.json({ agents, tasks });
+  const workflows = db.prepare(`
+    SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done FROM workflows
+  `).get();
+  res.json({ agents, tasks, workflows, kill_switch: getKillSwitch().active });
 });
+
+/* ── Auth ── */
+
+app.post('/api/auth/login', (req, res) => {
+  const { email, password, totp } = req.body ?? {};
+  if (typeof email !== 'string' || typeof password !== 'string') {
+    res.status(400).json({ error: 'email und password erforderlich' });
+    return;
+  }
+  const result = login(email, password, typeof totp === 'string' ? totp : undefined);
+  if (!result.ok) {
+    logAudit(email, 'auth.login.failed', result.error, req.ip);
+    res.status(result.status).json({ error: result.error, mfa_required: result.error.includes('MFA') });
+    return;
+  }
+  logAudit(email, 'auth.login', 'Anmeldung erfolgreich', req.ip);
+  res.json({ token: result.token, user: result.user });
+});
+
+app.get('/api/auth/me', requireAuth, (req: AuthedRequest, res) => {
+  res.json({ user: req.user });
+});
+
+app.post('/api/auth/mfa/enroll', requireAuth, (req: AuthedRequest, res) => {
+  const enrollment = mfaEnroll(req.user!.id);
+  logAudit(req.user!.email, 'auth.mfa.enroll', 'MFA-Setup gestartet', req.ip);
+  res.json(enrollment);
+});
+
+app.post('/api/auth/mfa/verify', requireAuth, (req: AuthedRequest, res) => {
+  const { code } = req.body ?? {};
+  if (typeof code !== 'string' || !mfaVerify(req.user!.id, code)) {
+    res.status(400).json({ error: 'Code ungültig' });
+    return;
+  }
+  logAudit(req.user!.email, 'auth.mfa.enabled', 'MFA aktiviert', req.ip);
+  res.json({ mfa_enabled: true });
+});
+
+/* ── Audit-Trail ── */
+
+app.get('/api/audit', requireAuth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT 100').all());
+});
+
+/* ── Kill-Switch ── */
+
+app.get('/api/kill-switch', (_req, res) => {
+  res.json(getKillSwitch());
+});
+
+app.post('/api/kill-switch', requireAuth, (req: AuthedRequest, res) => {
+  const check = verifySensitiveOp(req.user!.id, req.body?.totp);
+  if (!check.ok) {
+    res.status(401).json({ error: check.error, mfa_required: true });
+    return;
+  }
+  const { terminated } = activateKillSwitch(req.user!.email);
+  logAudit(req.user!.email, 'killswitch.activated', `${terminated} laufende Prozesse beendet`, req.ip);
+  res.json({ active: true, terminated });
+});
+
+app.post('/api/kill-switch/reset', requireAuth, (req: AuthedRequest, res) => {
+  resetKillSwitch();
+  logAudit(req.user!.email, 'killswitch.reset', 'System reaktiviert', req.ip);
+  res.json({ active: false });
+});
+
+/* ── Tasks (einzelner Agent) ── */
 
 app.get('/api/tasks', (_req, res) => {
   const rows = db.prepare(`
@@ -64,9 +162,11 @@ app.get('/api/tasks/:id', (req, res) => {
   res.json(row);
 });
 
-// Runs an agent task; the response is an SSE stream (consumed via fetch).
-// Events: start {task_id, model} | delta {text} | done {usage} | error {message}
-app.post('/api/tasks', (req, res) => {
+app.post('/api/tasks', requireAuth, (req: AuthedRequest, res) => {
+  if (getKillSwitch().active) {
+    res.status(423).json({ error: 'Kill-Switch aktiv — System gesperrt. Erst zurücksetzen.' });
+    return;
+  }
   const { agentId, prompt } = req.body ?? {};
   if (typeof agentId !== 'string' || typeof prompt !== 'string' || !prompt.trim()) {
     res.status(400).json({ error: 'agentId and prompt are required' });
@@ -78,16 +178,9 @@ app.post('/api/tasks', (req, res) => {
   const taskId = crypto.randomUUID();
   db.prepare('INSERT INTO tasks (id, agent_id, prompt, status, model) VALUES (?, ?, ?, ?, ?)')
     .run(taskId, agentId, prompt, 'running', modelFor(agent));
+  logAudit(req.user!.email, 'task.started', `${agent.display_name}: ${prompt.slice(0, 120)}`, req.ip);
 
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-  const send = (event: string, data: unknown) => {
-    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  };
+  const send = sseHead(res);
   send('start', { task_id: taskId, agent: agent.display_name, model: modelFor(agent) });
 
   const finish = db.prepare(`
@@ -95,24 +188,23 @@ app.post('/api/tasks', (req, res) => {
     finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?
   `);
 
-  const run = runAgent(agent, prompt, {
-    onText: (delta) => send('delta', { text: delta }),
-    onDone: ({ text, model, inputTokens, outputTokens, stopReason }) => {
-      const status = stopReason === 'refusal' ? 'refused' : 'done';
-      finish.run(text, status, model, inputTokens, outputTokens, null, taskId);
-      send('done', { task_id: taskId, status, model, input_tokens: inputTokens, output_tokens: outputTokens, stop_reason: stopReason });
+  runAgentStep(taskId, agent, prompt, (text) => send('delta', { text }))
+    .then((r) => {
+      finish.run(r.text, 'done', r.model, r.inputTokens, r.outputTokens, null, taskId);
+      send('done', { task_id: taskId, status: 'done', model: r.model, input_tokens: r.inputTokens, output_tokens: r.outputTokens, stop_reason: 'end_turn' });
       res.end();
-    },
-    onError: (err) => {
-      finish.run(null, 'error', modelFor(agent), null, null, err.message, taskId);
-      send('error', { task_id: taskId, message: err.message });
+    })
+    .catch((err: Error) => {
+      const status = getKillSwitch().active ? 'killed' : 'error';
+      finish.run(null, status, modelFor(agent), null, null, err.message, taskId);
+      logAudit(req.user!.email, `task.${status}`, `${agent.display_name}: ${err.message}`, req.ip);
+      send('error', { task_id: taskId, status, message: err.message });
       res.end();
-    },
-  });
+    });
 
   // Abort the model request if the client disconnects mid-stream.
   res.on('close', () => {
-    if (!res.writableEnded) run.abort();
+    if (!res.writableEnded) running.get(taskId)?.abort();
   });
 });
 
@@ -179,4 +271,5 @@ if (fs.existsSync(path.join(staticDir, 'index.html'))) {
 const port = Number(process.env.PORT ?? 3001);
 app.listen(port, () => {
   console.log(`Valtheron server listening on http://localhost:${port}`);
+  if (process.env.MOCK_LLM === '1') console.warn('[dev] MOCK_LLM aktiv — es werden keine echten Modell-Aufrufe gemacht.');
 });

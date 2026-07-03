@@ -11,9 +11,10 @@ FROM node:22-slim
 ENV NODE_ENV=production
 WORKDIR /app/server
 
-# better-sqlite3 bringt Prebuilds mit; python/make/g++ nur als Fallback.
 COPY server/package.json server/package-lock.json ./
-RUN npm ci
+# --include=dev: NODE_ENV=production lässt devDependencies sonst weg,
+# aber der Server läuft über tsx (devDependency).
+RUN npm ci --include=dev
 
 COPY server/ ./
 # Gebautes Frontend an den Ort kopieren, den der Server erwartet.
