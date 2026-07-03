@@ -3,6 +3,7 @@
 Interaktive Demo des **Valtheron Agentic Workspace** Dashboards (erstellt mit Kimi AI).
 
 - **Live-Demo:** https://jykrnxqosk3oq.kimi.page/#/
+- **Quellcode:** [`../dashboard/`](../dashboard/) — vollständiges React/Vite-Projekt (editierbar)
 - **Offline-Kopie:** dieses Verzeichnis enthält den vollständigen Build der Demo und läuft ohne Internetverbindung.
 
 ![Dashboard Overview](screenshots/dashboard-overview.png)
@@ -55,6 +56,6 @@ Die Demo visualisiert die Konzepte aus dem „Kochbuch“ dieses Repos:
 ## Technischer Hinweis
 
 Dieses Verzeichnis enthält den **kompilierten Produktions-Build** (minifiziertes
-JavaScript/CSS), nicht den Quellcode der Demo. Der ursprüngliche Quellcode liegt
-bei Kimi AI. Für Weiterentwicklung empfiehlt sich ein Nachbau als eigenes
-React/Vite-Projekt; dieser Build dient als Referenz und Vorschau.
+JavaScript/CSS). Der vollständige Quellcode liegt in [`../dashboard/`](../dashboard/)
+und erzeugt mit `npm run build` exakt diese Assets (identische Chunk-Hashes).
+Für Weiterentwicklung dort arbeiten; dieser Build dient als Referenz und Vorschau.
