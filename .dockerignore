@@ -1,0 +1,7 @@
+**/node_modules
+**/dist
+**/data
+**/.env
+dashboard-demo
+*.7z
+.git

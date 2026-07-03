@@ -7,6 +7,9 @@ if (process.env.HTTPS_PROXY || process.env.https_proxy) {
 import express from 'express';
 import cors from 'cors';
 import crypto from 'node:crypto';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { db } from './db.js';
 import { runAgent, modelFor, type AgentRow } from './agent.js';
 
@@ -112,6 +115,66 @@ app.post('/api/tasks', (req, res) => {
     if (!res.writableEnded) run.abort();
   });
 });
+
+/* ── Workflows (Multi-Agent-Orchestrierung) ── */
+
+app.get('/api/workflows', (_req, res) => {
+  const workflows = db.prepare('SELECT * FROM workflows ORDER BY created_at DESC LIMIT 25').all() as Array<Record<string, unknown>>;
+  const stepsFor = db.prepare('SELECT step_index, step_role, agent_id, status, input_tokens, output_tokens FROM workflow_steps WHERE workflow_id = ? ORDER BY step_index');
+  res.json(workflows.map((w) => ({ ...w, steps: stepsFor.all(w.id) })));
+});
+
+app.post('/api/workflows', requireAuth, (req: AuthedRequest, res) => {
+  if (getKillSwitch().active) {
+    res.status(423).json({ error: 'Kill-Switch aktiv — System gesperrt. Erst zurücksetzen.' });
+    return;
+  }
+  const { type, task, agentIds } = req.body ?? {};
+  const validTypes: WorkflowType[] = ['sequential', 'hierarchical', 'debate'];
+  if (!validTypes.includes(type) || typeof task !== 'string' || !task.trim() || !Array.isArray(agentIds)) {
+    res.status(400).json({ error: 'type (sequential|hierarchical|debate), task und agentIds[] erforderlich' });
+    return;
+  }
+  if (agentIds.length < 2 || agentIds.length > 4) {
+    res.status(400).json({ error: 'Bitte 2–4 Agenten wählen' });
+    return;
+  }
+  const byId = db.prepare('SELECT * FROM agents WHERE id = ?');
+  const agents = agentIds.map((id: string) => byId.get(id) as AgentRow | undefined);
+  const missing = agentIds.filter((_, i) => !agents[i]);
+  if (missing.length) {
+    res.status(404).json({ error: `Agenten nicht gefunden: ${missing.join(', ')}` });
+    return;
+  }
+  logAudit(req.user!.email, 'workflow.started', `${type}: ${task.slice(0, 120)} [${agentIds.join(', ')}]`, req.ip);
+
+  const send = sseHead(res);
+  let clientGone = false;
+  res.on('close', () => { clientGone = !res.writableEnded; });
+
+  runWorkflow(type, task, agents as AgentRow[], req.user!.email, send, () => clientGone)
+    .finally(() => res.end());
+});
+
+/* ── Statisches Frontend ausliefern (Single-Origin-Deployment) ──
+   Wenn das gebaute Dashboard vorliegt (dashboard/dist), liefert der Server
+   es unter "/" mit aus — Frontend und API teilen sich dann eine Domain,
+   keine CORS-/URL-Konfiguration nötig. Fehlt der Build, läuft der Server
+   als reine API weiter (lokale Dev-Umgebung mit getrenntem Vite). */
+const here = path.dirname(fileURLToPath(import.meta.url));
+const staticDir = process.env.STATIC_DIR ?? path.resolve(here, '../../dashboard/dist');
+if (fs.existsSync(path.join(staticDir, 'index.html'))) {
+  app.use(express.static(staticDir));
+  // SPA-Fallback: alles außer /api liefert index.html (Client-Routing).
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+      res.sendFile(path.join(staticDir, 'index.html'));
+    } else {
+      next();
+    }
+  });
+  console.log(`[web] Frontend wird ausgeliefert aus ${staticDir}`);
+}
 
 const port = Number(process.env.PORT ?? 3001);
 app.listen(port, () => {
