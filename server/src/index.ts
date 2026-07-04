@@ -6,6 +6,8 @@ if (process.env.HTTPS_PROXY || process.env.https_proxy) {
 }
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -22,8 +24,31 @@ import {
 } from './orchestrator.js';
 
 const app = express();
+// Hinter Renders/Caddys Reverse-Proxy: echte Client-IP aus X-Forwarded-For
+// (wichtig für Rate-Limiting und Audit-Log).
+app.set('trust proxy', 1);
+// Security-Header (CSP aus: die SPA nutzt Inline-Styles von Recharts/Framer).
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+
+// Brute-Force-Schutz: max. 10 Login-Versuche pro IP pro 15 Minuten.
+app.use('/api/auth/login', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Zu viele Login-Versuche — bitte in 15 Minuten erneut versuchen.' },
+}));
+// Kosten-/Missbrauchsschutz für alle API-Aufrufe: 120 Requests pro IP pro Minute.
+app.use('/api/', rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Rate-Limit erreicht — bitte kurz warten.' },
+}));
+
 ensureAdminUser();
 
 const startedAt = Date.now();
